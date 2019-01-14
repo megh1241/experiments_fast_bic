@@ -25,6 +25,21 @@ loadDataFromTwoFiles <- function(data_filename, gt_labels_filename){
     return( list(X, y))
 }
 
+loadCifar <- function(data_filename, gt_labels_filename){
+#    system("curl https://raw.githubusercontent.com/mlampros/DataSets/master/cifar_10.zip")      
+
+cifar_10 <- read.table("cifar_10.csv", nrows = 10000, header = T, 
+                       quote = "\"", sep = ",")
+X = as.matrix(cifar_10[1:5000, -ncol(cifar_10)])
+y = cifar_10[1:5000, ncol(cifar_10)]
+    #X[is.na(X)] <- 0
+    #X[is.nan(X)] <- 0
+#X = as.matrix(X[, colSums(X) > 0])
+print (y) 
+    return( list(X, y))
+}
+
+
 #Load datasets from data dir. Here the dataset and labels are in the same file.
 #The last column of the file consists of the labels
 loadDataFromSingleFile <- function(data_filename){
@@ -68,12 +83,13 @@ normalizeData <- function(X) {
 }
 
 # number of trees for forest
-numtrees <- 100
+numtrees <- 500
 
 #uncomment to use datasets in the data dir
 #lst <- loadDataFromTwoFiles(paste("data/",fname,".txt", sep=""), paste("data/",fname,"-label.txt", sep=""))
 #lst <- loadIrisData()
-lst <- loadDataFromTwoFiles("data/cifar10_train.txt", "data/cifar10_test.txt")
+lst <- loadCifar()
+#lst <- loadDataFromTwoFiles("data/cifar10_train100.txt", "data/cifar10_test100.txt")
 X<- lst[[1]]
 y<- lst[[2]]
 num_of_points <- length(y)
@@ -81,25 +97,29 @@ num_of_points <- length(y)
 #for precision@k Feel free to change this
 start_k = 10
 end_k = 100
-at_K = seq(10, 100, by=10)
+at_K = seq(1, 50, by=5)
 data_label=y
-X <- normalizeData(X)
-
+#X <- normalizeData(X)
+print(length(X))
+print(length(y))
 # urf + two means loss
 urerfStructure <- Urerf(X, trees=numtrees, splitCrit="twomeans", LinearCombo=FALSE)
+#simMat = randomForest(X, ntree=numtrees)$proximity
 simMat = urerfStructure$similarityMatrix
 D_rf=1-simMat
 D_rf_p_r_list = p_r_list(D_rf, data_label, at_K, num_of_points)
 D_rf_precision_list= D_rf_p_r_list$precisionList
+print(D_rf_precision_list)
 D_rf_recall_list=D_rf_p_r_list$recallList
 
-
+print("random forest done")
 # urf + BIC loss
 urerfStructure <- Urerf(X, trees=numtrees, splitCrit="bicfast", LinearCombo=FALSE)
 simMat = urerfStructure$similarityMatrix
 D_rf=1-simMat
 D_rf_p_r_list = p_r_list(D_rf, data_label, at_K, num_of_points)
 D_rf_bic_precision_list= D_rf_p_r_list$precisionList
+print(D_rf_bic_precision_list)
 D_rf_bic_recall_list=D_rf_p_r_list$recallList
 
 
@@ -109,6 +129,7 @@ simMat = urerfStructure$similarityMatrix
 D_rf=1-simMat
 D_rf_p_r_list = p_r_list(D_rf, data_label, at_K, num_of_points)
 D_rerf_precision_list= D_rf_p_r_list$precisionList
+print(D_rerf_precision_list)
 D_rerf_recall_list=D_rf_p_r_list$recallList
 
 
@@ -117,8 +138,23 @@ urerfStructure <- Urerf(X, trees=numtrees, splitCrit="bicfast")
 simMat = urerfStructure$similarityMatrix
 D_rf=1-simMat
 D_rf_p_r_list = p_r_list(D_rf, data_label, at_K, num_of_points)
-D_rerf_bic_precision_list= D_rf_p_r_list$precisionList
+D_rerf_bic_precision_list = D_rf_p_r_list$precisionList
+print(D_rerf_bic_precision_list)
 D_rerf_bic_recall_list=D_rf_p_r_list$recallList
+
+
+# Urerf + BIC loss
+
+#Uncomment for expt 3
+# PCA using SVD
+dPca = prcomp(X)
+ncomp = 50
+trainPca = as.matrix(X) %*% dPca$rotation[ , 1:ncomp]  # columns are eigenvectors, use first 150 principal components
+D_rf = as.matrix(dist(trainPca))
+D_rf_p_r_list = p_r_list(D_rf, data_label, at_K, num_of_points)
+D_pca_precision_list= D_rf_p_r_list$precisionList
+D_pca_recall_list=D_rf_p_r_list$recallList
+#invoke utility function to compute precision and recall
 
 
 #############################take care of the plotting################################
@@ -127,19 +163,20 @@ plot(at_K, D_rf_precision_list, type="l", col="green", xlab = "@k", ylab = "Prec
 lines(at_K, D_rf_bic_precision_list, type="l", col="red")
 lines(at_K, D_rerf_precision_list, type="l", col="blue")
 lines(at_K, D_rerf_bic_precision_list, type = "l", col="orange")
-legend("topright", inset=.05,  cex = 0.7, title="Variant",  c("URF+two means","URF+BICFAST", "URerF+two means", "URerF+BICFAST"),   horiz=FALSE, lty=c(1,1), lwd=c(2,2),col=c("green",  "red", "blue",  "orange"),  bg="grey96")
+lines(at_K, D_pca_precision_list, type="l", col="cyan")
+legend("topright", inset=.05,  cex = 0.7, title="Variant",  c("randomForest","URF+BICFAST", "URerF+two means", "URerF+BICFAST", "PCA"),   horiz=FALSE, lty=c(1,1), lwd=c(2,2),col=c("green",  "red", "blue",  "orange"),  bg="grey96")
 
 ############### plot recall vs K
 plot(at_K, D_rf_recall_list, type='l', col="green", xlab = "@k", ylab = "Recall")
 lines(at_K, D_rf_bic_recall_list, type='l', col="red")
 lines(at_K, D_rerf_recall_list, type='l', col="blue")
 lines(at_K, D_rerf_bic_recall_list, type = "l", col="orange")
-legend("bottomright", inset=.05,  cex = 0.5, title="Variant",  c("URF+two means","URF+BICFAST", "URerF+two means", "URerF+BICFAST" ),   horiz=FALSE,  lty=c(1,1), lwd=c(2,2),  col=c("green", "red", "blue",  "orange"),  bg="grey96")
+legend("bottomright", inset=.05,  cex = 0.5, title="Variant",  c("randomForest","URF+BICFAST", "URerF+two means", "URerF+BICFAST", "PCA" ),   horiz=FALSE,  lty=c(1,1), lwd=c(2,2),  col=c("green", "red", "blue",  "orange"),  bg="grey96")
 
 ################# plot precision vs recall
 plot(D_rf_recall_list, D_rf_precision_list, type = 'l', col="green", xlab = "Recall", ylab = "Precision", ylim = c(0, 1))
 lines(D_rf_bic_recall_list, D_rf_bic_precision_list, type = 'l', col="red")
 lines(D_rerf_recall_list, D_rerf_precision_list, type = 'l', col='blue')
 lines(D_rerf_bic_recall_list, D_rerf_bic_precision_list, type = 'l', col='orange')
-legend("bottomright", inset=.01,  cex = 0.4, title="Variant",  c("URF+two means","URF+BICFAST", "URerF+two means", "URerF+BICFAST"),   horiz=FALSE,  lty=c(1,1), lwd=c(2,2),  col=c("green", "red","blue", "orange" ),  bg="grey96")
+legend("bottomright", inset=.01,  cex = 0.4, title="Variant",  c("randomForest","URF+BICFAST", "URerF+two means", "URerF+BICFAST", "PCA"),   horiz=FALSE,  lty=c(1,1), lwd=c(2,2),  col=c("green", "red","blue", "orange" ),  bg="grey96")
 
